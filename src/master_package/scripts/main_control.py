@@ -86,7 +86,7 @@ def main():
 
     vehicle.mode = VehicleMode("GUIDED")
 
-    system("python ./get_target_xy.py")
+    system("rosrun master_package get_target_xy.py")
 
     rospy.init_node('main_node', anonymous=True)
     while is_run:

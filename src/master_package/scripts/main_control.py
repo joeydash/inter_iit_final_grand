@@ -86,7 +86,7 @@ def main():
 
     vehicle.mode = VehicleMode("GUIDED")
 
-    os.spawnl(os.P_DETACH, "rosrun master_package get_target_xy.py")
+    os.spawnl(os.P_NOWAIT, "rosrun master_package get_target_xy.py")
 
     rospy.init_node('main_node', anonymous=True)
     while is_run:

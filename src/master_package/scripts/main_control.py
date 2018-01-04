@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 from __future__ import print_function
-from os import system
+import os
 import time
 import math
 import rospy
@@ -86,10 +86,11 @@ def main():
 
     vehicle.mode = VehicleMode("GUIDED")
 
-    system("rosrun master_package get_target_xy.py")
+    os.spawnl(os.P_DETACH, "rosrun master_package get_target_xy.py")
 
     rospy.init_node('main_node', anonymous=True)
     while is_run:
+        print("inside is_run")
         rospy.Subscriber("get_target_xy/target_xy", msg.Int16MultiArray, target_set_xy)
     altitude_control(3, kp_alt, vehicle)
 

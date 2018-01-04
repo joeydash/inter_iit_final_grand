@@ -48,7 +48,7 @@ def main():
         if Is_run:
             tmp = get_xy(cap)
             data = msg.Int16MultiArray(data=tmp)
-            rospy.loginfo(data)
+      # rospy.loginfo(data)
             pub.publish(data)
             rate.sleep()
         else:

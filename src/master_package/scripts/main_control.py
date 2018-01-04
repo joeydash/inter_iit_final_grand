@@ -1,28 +1,42 @@
 #!/usr/bin/env python
 from __future__ import print_function
 from os import system
-import sys
+import time
+import math
 import rospy
 from std_msgs import msg
 
 from dronekit import connect, VehicleMode
-from altitude_control import control_main, altitude_control
+from altitude_control import altitude_control, get_alt
 from xy_control import xy_position_control
 
+take_off_alt = 3
 kp_alt = .5
 kp_velx = .5
 kp_vely = .5
+is_run = True
+# connection_string = '/dev/ttyACM0'
+connection_string = "tcp:127.0.0.1:5763"
 
+# Connect to the Vehicle..
+print('Connecting to vehicle on: %s' % connection_string)
+vehicle = connect(connection_string, wait_ready=True)
 # initialising variables
 curr_alt = vehicle.location.global_relative_frame.alt
 prev_val_read = vehicle.location.global_relative_frame.alt
 prev_time = time.time()
 then = time.time()
-flag = 0
+start_yaw = vehicle.attitude.yaw
 
 
-def callback(data):
-    global curr_alt, prev_val_read, prev_time, then, flag
+def target_set_xy(message):
+    global vehicle, is_run, then, curr_alt, prev_val_read, prev_time, start_yaw
+    # initialising variables
+    curr_alt = vehicle.location.global_relative_frame.alt
+    prev_val_read = vehicle.location.global_relative_frame.alt
+    prev_time = time.time()
+    then = time.time()
+
     print("callback started")
     curr_time = time.time()
     print(curr_alt)
@@ -30,68 +44,64 @@ def callback(data):
     prev_val_read = alt_data[1]
     prev_time = curr_time
 
-    rospy.loginfo(rospy.get_caller_id() + "I heard %s", data)
+    rospy.loginfo(rospy.get_caller_id() + "I heard %s", message)
     camera_constant = alt_data[0] / 557
-    msg = xy_position_control(data[1] * camera_constant, data[0] * camera_constant, kp_velx, kp_vely, curr_yaw, vehicle)
+    mav_msg = xy_position_control(message[1] * camera_constant, message[0] * camera_constant, kp_velx, kp_vely,
+                                  start_yaw,
+                                  vehicle)
 
-    vehicle.send_mavlink(msg)
+    vehicle.send_mavlink(mav_msg)
     now = time.time()
-    radius = math.sqrt(error_xy[0] ** 2 + error_xy[1] ** 2)
+    radius = math.sqrt(message.data[0] ** 2 + message.data[1] ** 2)
     # break loop if it holds altitude for more than 5 secs
-    if radius + 5 > radius > radius - 5:
+    if radius < 5:
         if now - then > 5:
-            pub = rospy.Publisher('master_node/is_run', _Bool, queue_size=25)
-            is_run_obj = False
+            pub = rospy.Publisher('master/is_run', msg.Bool, queue_size=25)
+            is_run_obj = msg.Bool(data=is_run)
             pub.publish(is_run_obj)
-            flag = 1
+
     else:
         then = now
 
 
-# connection_string = '/dev/ttyACM0'
-connection_string = "tcp:127.0.0.1:5763"
+def main():
+    global vehicle
+    print("Basic pre-arm checks")
+    vehicle.mode = VehicleMode("LOITER")
+    time.sleep(5)
+    print(vehicle.mode.name)
+    print("Arming motors")
+    vehicle.armed = True
+    time.sleep(5)
+    while not vehicle.armed:
+        print("Waiting for arming...")
+        time.sleep(1)
 
-# Connect to the Vehicle..
-print('Connecting to vehicle on: %s' % connection_string)
-vehicle = connect(connection_string, wait_ready=True)
+    print("Taking off!")
+    altitude_control(take_off_alt, kp_alt, vehicle)
+    vehicle.channels.overrides['3'] = 1500
+    print(vehicle.location.global_relative_frame.alt)
+    print("holding")
+    time.sleep(5)
 
-print("Basic pre-arm checks")
-vehicle.mode = VehicleMode("LOITER")
-time.sleep(5)
-print(vehicle.mode.name)
-print("Arming motors")
-vehicle.armed = True
-time.sleep(5)
+    vehicle.mode = VehicleMode("GUIDED")
 
-while not vehicle.armed:
-    print("Waiting for arming...")
-    time.sleep(1)
+    system("python ./landing_target.py")
 
-print("Taking off!")
-altitude_control(3, kp_alt, vehicle)
-vehicle.channels.overrides['3'] = 1500
-print(vehicle.location.global_relative_frame.alt)
-print("holding")
-time.sleep(5)
+    rospy.init_node('main_node', anonymous=True)
+    while is_run:
+        rospy.Subscriber("get_target_xy/target_xy", msg.Int16MultiArray, target_set_xy)
+    altitude_control(3, kp_alt, vehicle)
 
-vehicle.mode = VehicleMode("GUIDED")
+    # while True:
+    # run atharva's script, returns y and theta
+    # allign yaw
 
-system("python ../../landing_target/src/landing_target.py")
+    vehicle.mode = VehicleMode("LAND")
+    vehicle.close()
 
-rospy.init_node('master_node', anonymous=True)
-rospy.Subscriber("landing_target/xy_pos", numpy_msg(_Int16), callback)
-rospy.spin()
+    print("Completed")
 
-while (flag == 0):
-    time.sleep(1)
 
-altitude_control(3, kp_alt, vehicle)
-
-# while True:
-# run atharva's script, returns y and theta
-# allign yaw
-
-vehicle.mode = VehicleMode("LAND")
-vehicle.close()
-
-print("Completed")
+if __name__ == "__main__":
+    main()
